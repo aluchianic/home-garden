@@ -1,0 +1,24 @@
+[
+  {
+    "name": "projectName",
+    "label": "Project Name",
+    "type": "char",
+    "length": 32,
+    "value": "Home garden"
+  },
+  {
+    "name": "wateringStartTime",
+    "type": "uint16_t",
+    "value": 23
+  },
+  {
+    "name": "wateringDuration",
+    "type": "uint16_t",
+    "value": 3
+  },
+  {
+    "name": "waterToday",
+    "type": "bool",
+    "value": true
+  }
+]

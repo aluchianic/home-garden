@@ -1,0 +1,32 @@
+[
+  {
+    "name": "projectName",
+    "type": "char",
+    "length": 32,
+    "direction": "display"
+  },
+  {
+    "name": "temp",
+    "type": "float",
+    "direction": "display"
+  },
+  {
+    "name": "temperature",
+    "type": "float",
+    "direction": "display",
+    "display": "graph",
+    "xaxis": 20
+  },
+  {
+    "name": "humi",
+    "type": "float",
+    "direction": "display"
+  },
+  {
+    "name": "humidity",
+    "type": "float",
+    "direction": "display",
+    "display": "graph",
+    "xaxis": 20
+  }
+]
