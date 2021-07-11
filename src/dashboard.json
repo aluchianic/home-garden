@@ -28,5 +28,10 @@
     "direction": "display",
     "display": "graph",
     "xaxis": 20
+  },
+  {
+    "name": "pump1",
+    "type": "bool",
+    "direction": "display"
   }
 ]

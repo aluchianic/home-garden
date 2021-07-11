@@ -11,7 +11,8 @@
 #include "dashboard.h"
 #include "timeSync.h"
 
-#include <string>
+// Timezones
+#include <TZ.h>
 
 // DHT
 #include <DHT.h>
@@ -19,6 +20,9 @@
 
 // LCD
 #include <LiquidCrystal_I2C.h>
+
+// DEBUG - set to true for more information
+#define DEBUG false
 
 // DHT setup
 #define DHTPIN 2 // Digital pin connected to the DHT sensor
@@ -84,6 +88,51 @@ void configureDHT(sensor_t sensor)
     dhtDelayMS = sensor.min_delay / 1000;
 }
 
+// Current Time
+struct tm *tm_struct;
+
+// NodeMCU GPIO to D
+int boardPins[4]{5, 4, 0, 2};
+
+// Pump
+struct Pump
+{
+    int initial;
+    bool flowing;
+    int timeInMin;
+    int startTime;
+};
+
+Pump pump1;
+
+void stopPump(Pump pump)
+{
+    pump.flowing = false;
+    digitalWrite(boardPins[0], HIGH);
+
+    if (DEBUG)
+    {
+        Serial.println("Pump stoped");
+    }
+}
+
+void startPump(Pump pump)
+{
+    pump.flowing = true;
+    digitalWrite(boardPins[0], LOW);
+
+    if (DEBUG)
+    {
+        Serial.println("Pump started");
+    }
+}
+
+// Potentionmeter
+const int pt_analogInPin = A0; // ESP8266 Analog Pin ADC0 = A0
+int pt_value = 0;              // value read from the pot
+int pt_on = 5;                 // pot top right
+int pt_off = 1024;             // pot top
+
 // LCD setup
 // set the LCD number of columns and rows
 int lcdColumns = 16;
@@ -95,16 +144,15 @@ LiquidCrystal_I2C lcd(0x27, lcdColumns, lcdRows);
 
 String message = "";
 
-// DEBUG - set to true for more information
-bool DEBUG = false;
-
+// ---=== Tasks by interval ===----
 struct task
 {
     unsigned long rate;
     unsigned long previous;
 };
 
-task taskA = {.rate = 500, .previous = 0};
+task taskDashboard = {.rate = 500, .previous = 0};
+task taskCheckTimeForPump = {.rate = 60000, .previous = 0};
 
 void setup()
 {
@@ -117,6 +165,26 @@ void setup()
     timeSync.begin();
     dash.begin(500);
 
+    timeSync.begin(TZ_Europe_Chisinau);
+    //Wait for connection
+    timeSync.waitForSyncResult(10000);
+
+    if (timeSync.isSynced())
+    {
+        time_t now = time(nullptr);
+        struct tm *tm_struct = localtime(&now);
+
+        if (DEBUG)
+        {
+            Serial.print(PSTR("Time is set for Chisinau: "));
+            Serial.print(asctime(tm_struct));
+        }
+    }
+    else
+    {
+        Serial.println("Timeout while receiving the time");
+    }
+
     // Initialize DHT device.
     dht.begin();
     sensor_t sensor;
@@ -126,6 +194,22 @@ void setup()
     lcd.init();
     // turn on LCD backlight
     lcd.backlight();
+
+    // Pump setup
+    // PIN initialization for relay
+    pinMode(boardPins[0], OUTPUT);
+    // Keep pin1 OFF on setup
+
+    Pump pump1 = {
+        digitalRead(boardPins[0]),
+        false,
+        configManager.data.wateringDuration,
+        configManager.data.wateringStartTime};
+
+    if (pump1.initial == 0)
+    {
+        stopPump(pump1);
+    }
 }
 
 void loop()
@@ -161,6 +245,7 @@ void loop()
         lcd.setCursor(0, 0);
         message = F("Temp: ") + String(event.temperature) + F(" C");
         lcd.print(message);
+
         dash.data.temp = event.temperature;
         dash.data.temperature = event.temperature;
     }
@@ -183,16 +268,55 @@ void loop()
         lcd.setCursor(0, 1);
         message = F("Hum: ") + String(event.relative_humidity) + F("%");
         lcd.print(message);
+
         dash.data.humi = event.relative_humidity;
         dash.data.humidity = event.relative_humidity;
     }
 
-    // ---=== Dashboard ===---
-    if (taskA.previous == 0 || (millis() - taskA.previous > taskA.rate))
+    // Potentiometer pump-1 manual ON/OFF
+    pt_value = analogRead(pt_analogInPin);
+    if (pt_value == pt_off)
     {
-        taskA.previous = millis();
+        stopPump(pump1);
+    }
+    if (pt_value == pt_on)
+    {
+        startPump(pump1);
+    }
+
+    // ---=== Dashboard tasks ===---
+    if (taskDashboard.previous == 0 || (millis() - taskDashboard.previous > taskDashboard.rate))
+    {
+        taskDashboard.previous = millis();
 
         String stringOne = "tomatoes";
         stringOne.toCharArray(dash.data.projectName, 32);
+
+        dash.data.pump1 = pump1.flowing;
+    }
+
+    // ---=== Pump tasks ===---
+    if (taskCheckTimeForPump.previous == 0 || (millis() - taskCheckTimeForPump.previous > taskCheckTimeForPump.rate))
+    {
+        taskCheckTimeForPump.previous = millis();
+        if (tm_struct->tm_hour == pump1.startTime)
+        {
+            if (tm_struct->tm_min == 0)
+            {
+                startPump(pump1);
+            }
+            if (tm_struct->tm_min >= pump1.timeInMin)
+            {
+                stopPump(pump1);
+            }
+        }
+        // else
+        // {
+        //     // ensure that pump1 is off
+        //     if (pump1.flowing == true)
+        //     {
+        //         stopPump(pump1);
+        //     }
+        // }
     }
 }
