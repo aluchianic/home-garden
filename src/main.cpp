@@ -88,9 +88,6 @@ void configureDHT(sensor_t sensor)
     dhtDelayMS = sensor.min_delay / 1000;
 }
 
-// Current Time
-struct tm *tm_struct;
-
 // NodeMCU GPIO to D
 int boardPins[4]{5, 4, 0, 2};
 
@@ -129,20 +126,9 @@ void startPump(Pump pump)
 
 // Potentionmeter
 const int pt_analogInPin = A0; // ESP8266 Analog Pin ADC0 = A0
-int pt_value = 0;              // value read from the pot
-int pt_on = 5;                 // pot top right
+int pt_value = 1;              // value read from the pot
+int pt_on = 0;                 // pot top right
 int pt_off = 1024;             // pot top
-
-// LCD setup
-// set the LCD number of columns and rows
-int lcdColumns = 16;
-int lcdRows = 2;
-
-// set LCD address, number of columns and rows
-// if you don't know your display address, run an I2C scanner sketch
-LiquidCrystal_I2C lcd(0x27, lcdColumns, lcdRows);
-
-String message = "";
 
 // ---=== Tasks by interval ===----
 struct task
@@ -172,12 +158,11 @@ void setup()
     if (timeSync.isSynced())
     {
         time_t now = time(nullptr);
-        struct tm *tm_struct = localtime(&now);
 
         if (DEBUG)
         {
             Serial.print(PSTR("Time is set for Chisinau: "));
-            Serial.print(asctime(tm_struct));
+            Serial.print(asctime(localtime(&now)));
         }
     }
     else
@@ -190,21 +175,15 @@ void setup()
     sensor_t sensor;
     configureDHT(sensor);
 
-    // LCD initialize
-    lcd.init();
-    // turn on LCD backlight
-    lcd.backlight();
-
     // Pump setup
     // PIN initialization for relay
     pinMode(boardPins[0], OUTPUT);
-    // Keep pin1 OFF on setup
 
-    Pump pump1 = {
+    pump1 = {
         digitalRead(boardPins[0]),
         false,
-        configManager.data.wateringDuration,
-        configManager.data.wateringStartTime};
+        configManager.data.wateringStartTime,
+        configManager.data.wateringDuration};
 
     if (pump1.initial == 0)
     {
@@ -220,8 +199,13 @@ void loop()
     configManager.loop();
     dash.loop();
 
+    // Current time
+    time_t now = time(nullptr);
+    struct tm *timeinfo;
+    timeinfo = localtime(&now);
+
     // LCD set initial cursor
-    lcd.setCursor(0, 0);
+    // lcd.setCursor(0, 0);
 
     //DHT delay for reading sensor events
     delay(dhtDelayMS);
@@ -241,11 +225,6 @@ void loop()
             Serial.println(F("°C"));
         }
 
-        // LCD set initial cursor on top line
-        lcd.setCursor(0, 0);
-        message = F("Temp: ") + String(event.temperature) + F(" C");
-        lcd.print(message);
-
         dash.data.temp = event.temperature;
         dash.data.temperature = event.temperature;
     }
@@ -264,24 +243,8 @@ void loop()
             Serial.println(F("%"));
         }
 
-        // LCD set initial cursor on bottom line
-        lcd.setCursor(0, 1);
-        message = F("Hum: ") + String(event.relative_humidity) + F("%");
-        lcd.print(message);
-
         dash.data.humi = event.relative_humidity;
         dash.data.humidity = event.relative_humidity;
-    }
-
-    // Potentiometer pump-1 manual ON/OFF
-    pt_value = analogRead(pt_analogInPin);
-    if (pt_value == pt_off)
-    {
-        stopPump(pump1);
-    }
-    if (pt_value == pt_on)
-    {
-        startPump(pump1);
     }
 
     // ---=== Dashboard tasks ===---
@@ -292,24 +255,31 @@ void loop()
         String stringOne = "tomatoes";
         stringOne.toCharArray(dash.data.projectName, 32);
 
-        dash.data.pump1 = pump1.flowing;
+        //   Potentiometer pump-1 manual ON/OFF
+        pt_value = analogRead(pt_analogInPin);
+        if (pt_value == pt_off)
+        {
+            dash.data.pump1 = false;
+            stopPump(pump1);
+        }
+        if (pt_value == pt_on)
+        {
+            dash.data.pump1 = true;
+            startPump(pump1);
+        }
     }
 
     // ---=== Pump tasks ===---
     if (taskCheckTimeForPump.previous == 0 || (millis() - taskCheckTimeForPump.previous > taskCheckTimeForPump.rate))
     {
-        taskCheckTimeForPump.previous = millis();
-        if (tm_struct->tm_hour == pump1.startTime)
+        if (timeinfo->tm_hour == pump1.startTime)
         {
-            if (tm_struct->tm_min == 0)
-            {
+            if (timeinfo->tm_min == 0)
                 startPump(pump1);
-            }
-            if (tm_struct->tm_min >= pump1.timeInMin)
-            {
+            if (timeinfo->tm_min >= pump1.timeInMin)
                 stopPump(pump1);
-            }
         }
+        // TODO: ensuring that pump is off - stop pump when it is started mannualy
         // else
         // {
         //     // ensure that pump1 is off
@@ -317,6 +287,5 @@ void loop()
         //     {
         //         stopPump(pump1);
         //     }
-        // }
     }
 }
