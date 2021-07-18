@@ -19,7 +19,10 @@
 #include <DHT_U.h>
 
 // LCD
-#include <LiquidCrystal_I2C.h>
+// #include <LiquidCrystal_I2C.h>
+
+// Custom
+#include "pump.cpp"
 
 // DEBUG - set to true for more information
 #define DEBUG false
@@ -92,37 +95,7 @@ void configureDHT(sensor_t sensor)
 int boardPins[4]{5, 4, 0, 2};
 
 // Pump
-struct Pump
-{
-    int initial;
-    bool flowing;
-    int timeInMin;
-    int startTime;
-};
-
 Pump pump1;
-
-void stopPump(Pump pump)
-{
-    pump.flowing = false;
-    digitalWrite(boardPins[0], HIGH);
-
-    if (DEBUG)
-    {
-        Serial.println("Pump stoped");
-    }
-}
-
-void startPump(Pump pump)
-{
-    pump.flowing = true;
-    digitalWrite(boardPins[0], LOW);
-
-    if (DEBUG)
-    {
-        Serial.println("Pump started");
-    }
-}
 
 // Potentionmeter
 const int pt_analogInPin = A0; // ESP8266 Analog Pin ADC0 = A0
@@ -140,6 +113,39 @@ struct task
 task taskDashboard = {.rate = 500, .previous = 0};
 task taskCheckTimeForPump = {.rate = 60000, .previous = 0};
 
+void configUpdater()
+{
+    pump1.timeStart = PumpTime(configManager.data.wateringStartTime);
+    pump1.timeStop = PumpTime(configManager.data.wateringStopTime);
+
+    if (configManager.data.pumpSwitcher)
+    {
+        pump1.start();
+    }
+    if (!configManager.data.pumpSwitcher)
+    {
+        pump1.stop();
+    }
+
+    if (DEBUG)
+    {
+        Serial.println("Config changed, updating pump1 timer values.");
+
+        Serial.print("pump1switcher is now: ");
+        Serial.println(configManager.data.pumpSwitcher);
+
+        Serial.print("pump1.timeStart : ");
+        Serial.print(pump1.timeStart.hour);
+        Serial.print(":");
+        Serial.println(pump1.timeStart.min);
+
+        Serial.print("pump1.timeStart : ");
+        Serial.print(pump1.timeStop.hour);
+        Serial.print(":");
+        Serial.println(pump1.timeStop.min);
+    }
+}
+
 void setup()
 {
     Serial.begin(9600);
@@ -147,6 +153,7 @@ void setup()
     LittleFS.begin();
     GUI.begin();
     configManager.begin();
+    configManager.setConfigSaveCallback(configUpdater);
     WiFiManager.begin(configManager.data.projectName);
     timeSync.begin();
     dash.begin(500);
@@ -175,19 +182,15 @@ void setup()
     sensor_t sensor;
     configureDHT(sensor);
 
-    // Pump setup
-    // PIN initialization for relay
-    pinMode(boardPins[0], OUTPUT);
-
-    pump1 = {
-        digitalRead(boardPins[0]),
-        false,
+    pump1.initPump(
+        boardPins[0],
+        &dash.data.pump1status,
         configManager.data.wateringStartTime,
-        configManager.data.wateringDuration};
+        configManager.data.wateringStopTime);
 
-    if (pump1.initial == 0)
+    if (digitalRead(boardPins[0]) == 0)
     {
-        stopPump(pump1);
+        pump1.stop();
     }
 }
 
@@ -255,37 +258,43 @@ void loop()
         String stringOne = "tomatoes";
         stringOne.toCharArray(dash.data.projectName, 32);
 
-        //   Potentiometer pump-1 manual ON/OFF
+        //  pt - Potentiometer pump-1 manual ON/OFF
         pt_value = analogRead(pt_analogInPin);
-        if (pt_value == pt_off)
-        {
-            dash.data.pump1 = false;
-            stopPump(pump1);
-        }
         if (pt_value == pt_on)
         {
-            dash.data.pump1 = true;
-            startPump(pump1);
+            pump1.start();
+        }
+        else if (pt_value == pt_off)
+        {
+            pump1.stop();
         }
     }
 
     // ---=== Pump tasks ===---
     if (taskCheckTimeForPump.previous == 0 || (millis() - taskCheckTimeForPump.previous > taskCheckTimeForPump.rate))
     {
-        if (timeinfo->tm_hour == pump1.startTime)
+        if (DEBUG)
         {
-            if (timeinfo->tm_min == 0)
-                startPump(pump1);
-            if (timeinfo->tm_min >= pump1.timeInMin)
-                stopPump(pump1);
+            Serial.print("time to start = ");
+            Serial.print(pump1.timeStart.hour);
+            Serial.print(":");
+            Serial.print(pump1.timeStart.min);
+            Serial.print("   -------     ");
+
+            Serial.print("time to stop =");
+            Serial.print(pump1.timeStop.hour);
+            Serial.print(":");
+            Serial.println(pump1.timeStop.min);
         }
-        // TODO: ensuring that pump is off - stop pump when it is started mannualy
-        // else
-        // {
-        //     // ensure that pump1 is off
-        //     if (pump1.flowing == true)
-        //     {
-        //         stopPump(pump1);
-        //     }
+
+        if (timeinfo->tm_hour == pump1.timeStart.hour && timeinfo->tm_min == pump1.timeStart.min)
+        {
+            pump1.start();
+        }
+
+        if (timeinfo->tm_hour == pump1.timeStop.hour && timeinfo->tm_min == pump1.timeStop.min)
+        {
+            pump1.stop();
+        }
     }
 }
