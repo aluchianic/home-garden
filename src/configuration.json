@@ -8,16 +8,21 @@
   },
   {
     "name": "wateringStartTime",
-    "type": "uint16_t",
-    "value": 23
+    "label": "Watering start time (eg. \"23 00\" space separated)",
+    "type": "char",
+    "length": 32,
+    "value": "23 00"
   },
   {
-    "name": "wateringDuration",
-    "type": "uint16_t",
-    "value": 3
+    "name": "wateringStopTime",
+    "label": "Watering stop time (eg. \"23 15\" space separated)",
+    "type": "char",
+    "length": 32,
+    "value": "23 03"
   },
   {
-    "name": "waterToday",
+    "name": "pumpSwitcher",
+    "label": "ON/OFF pump1",
     "type": "bool",
     "value": true
   }

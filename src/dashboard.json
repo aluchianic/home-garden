@@ -30,7 +30,7 @@
     "xaxis": 20
   },
   {
-    "name": "pump1",
+    "name": "pump1status",
     "type": "bool",
     "direction": "display"
   }
